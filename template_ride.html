@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Diagnóstico Situacional — Abastecimento de Água e Clima na RIDE-DF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f3f4f2;
+    --panel: #ffffff;
+    --ink: #1c2a2e;
+    --muted: #66756f;
+    --border: #dfe3df;
+    --accent: #1f4e46;
+    --accent-2: #a3623e;
+    --serif: "Source Serif 4", Georgia, serif;
+    --sans: "Inter", -apple-system, "Segoe UI", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    padding: 26px 28px 18px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  header::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: var(--accent);
+  }
+  header h1 {
+    margin: 0 0 6px;
+    font-family: var(--serif);
+    font-size: 23px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.01em;
+  }
+
+  footer.footnote {
+    padding: 16px 28px 26px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    line-height: 1.7;
+  }
+  footer.footnote .credito {
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .stat-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-card {
+    flex: 1 1 160px;
+    background: var(--panel);
+    padding: 14px 18px;
+  }
+  .stat-card .stat-label {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  .stat-card .stat-value {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .stat-card .stat-value .unit { font-size: 14px; color: var(--muted); font-weight: 500; }
+  .stat-card.warn .stat-value { color: #b23b2e; }
+
+  .period-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 28px;
+    min-height: 20px;
+    background: #eef1ec;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .period-bar .period-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-right: 2px;
+  }
+  .period-tab {
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    cursor: pointer;
+  }
+  .period-tab.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  #periodBar select, #periodBar input[type="date"] {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 6px 11px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--ink);
+  }
+  .period-note {
+    font-size: 11.5px;
+    color: var(--accent-2);
+    font-weight: 600;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 28px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    padding: 11px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .view { display: none; padding: 18px 28px 30px; }
+  .view.active { display: block; }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .controls label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+  select {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 11px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--ink);
+  }
+
+  #map {
+    height: 560px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+
+  .legend-box {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .legend-box .legend-title { font-weight: 600; color: var(--ink); margin-right: 4px; }
+  .legend-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px 3px 5px;
+    border-radius: 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    font-size: 11.5px;
+  }
+  .legend-chip .swatch {
+    width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
+  }
+  .uf-row { margin-top: 6px; }
+  .uf-dot { display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px; }
+
+  .chart-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  canvas#barChart { max-height: 900px; }
+
+  .leaflet-popup-content-wrapper { border-radius: 8px; }
+  .leaflet-popup-content { font-family: var(--sans); font-size: 12.5px; line-height: 1.55; min-width: 190px; }
+  .leaflet-popup-content b { color: var(--accent); font-family: var(--serif); }
+  .badge {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    color: white;
+    margin-left: 4px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Diagnóstico Situacional — Abastecimento de Água e Clima na RIDE-DF</h1>
+</header>
+
+<div class="stat-strip">
+  <div class="stat-card warn">
+    <div class="stat-label">Pior atendimento com rede</div>
+    <div class="stat-value">__STAT_PIOR_ATENDIMENTO__</div>
+  </div>
+  <div class="stat-card warn">
+    <div class="stat-label">Maior intermitência no abastecimento</div>
+    <div class="stat-value">__STAT_MAIOR_INTERMITENCIA__</div>
+  </div>
+  <div class="stat-card warn">
+    <div class="stat-label" id="statTempLabel">Maior temp. máxima prevista</div>
+    <div class="stat-value" id="statTempValue">—</div>
+  </div>
+  <div class="stat-card warn">
+    <div class="stat-label" id="statPmLabel">Maior concentração média de PM2,5</div>
+    <div class="stat-value" id="statPmValue">—</div>
+  </div>
+  <div class="stat-card warn">
+    <div class="stat-label" id="statFocosLabel">Mais focos de queimada</div>
+    <div class="stat-value" id="statFocosValue">—</div>
+  </div>
+</div>
+
+<div class="period-bar" id="periodBar"></div>
+
+<div class="tabs">
+  <div class="tab active" data-view="mapview">Mapa</div>
+  <div class="tab" data-view="chartview">Gráfico (ranking)</div>
+</div>
+
+<div id="mapview" class="view active">
+  <div class="controls">
+    <label for="mapCategorySelect">Categoria:</label>
+    <select id="mapCategorySelect"></select>
+    <label for="indicatorSelect">Variável:</label>
+    <select id="indicatorSelect"></select>
+  </div>
+  <div id="map"></div>
+  <div class="legend-box" id="legendChips"></div>
+  <div class="legend-box uf-row">
+    <span style="font-weight:600; color:var(--muted);">UF (borda do município):</span>
+    <span><span class="uf-dot" style="background:#1f4e46;"></span>DF</span>
+    <span><span class="uf-dot" style="background:#3d7a4a;"></span>GO</span>
+    <span><span class="uf-dot" style="background:#a3623e;"></span>MG</span>
+  </div>
+</div>
+
+<div id="chartview" class="view">
+  <div class="controls">
+    <label for="chartCategorySelect">Categoria:</label>
+    <select id="chartCategorySelect"></select>
+    <label for="chartIndicatorSelect">Variável:</label>
+    <select id="chartIndicatorSelect"></select>
+  </div>
+  <div class="chart-wrap">
+    <canvas id="barChart"></canvas>
+  </div>
+</div>
+
+<footer class="footnote">
+  __SUBTITLE__<br>
+  <span class="credito">Ianna Napoleão (Residência de Vigilância em Saúde) · Natália Aparecida (Residência de Medicina Veterinária Preventiva) · Layane Rodrigues (Residência de Vigilância em Saúde)</span><br>
+  Universidade de Brasília — Sala de Situação de Saúde
+</footer>
+
+<script>
+// Fontes independentes, unidas por um seletor global de data:
+// AGUA              - estrutural/fixo (SINISA)
+// PERIODS_CLIMA     - CAMS agregado por DIA DE REFERENCIA
+// PERIODS_QUEIMADAS - observacao diaria do BDQueimadas/INPE
+const AGUA = __AGUA_JSON__;
+const PERIODS_CLIMA = __PERIODS_CLIMA_JSON__;
+const PERIODS_QUEIMADAS = __PERIODS_QUEIMADAS_JSON__;
+const BOUNDARIES = __BOUNDARIES_JSON__;
+
+const UF_COLOR = { DF: "#1f4e46", GO: "#3d7a4a", MG: "#a3623e" };
+
+function colorScale(value, min, max, invert) {
+  if (value === null || value === undefined || isNaN(value)) return "#bdbdbd";
+  let t = (value - min) / (max - min || 1);
+  t = Math.max(0, Math.min(1, t));
+  if (invert) t = 1 - t;
+  const stops = [[248, 105, 107], [255, 235, 132], [99, 190, 123]];
+  let seg = t < 0.5 ? 0 : 1;
+  let localT = t < 0.5 ? t / 0.5 : (t - 0.5) / 0.5;
+  const c0 = stops[seg], c1 = stops[seg + 1];
+  const r = Math.round(c0[0] + (c1[0] - c0[0]) * localT);
+  const g = Math.round(c0[1] + (c1[1] - c0[1]) * localT);
+  const b = Math.round(c0[2] + (c1[2] - c0[2]) * localT);
+  return `rgb(${r},${g},${b})`;
+}
+
+const INDICATOR_DEFS = {
+  iag0001:           { label: "Atendimento total com rede (%)", invert: false, unit: "%" },
+  iag0002:           { label: "Atendimento urbano (%)", invert: false, unit: "%" },
+  iag0003:           { label: "Atendimento rural (%)", invert: false, unit: "%" },
+  intermitencia:     { label: "Incidência de intermitência (%)", invert: true, unit: "%" },
+  temp_max:          { label: "Temperatura máxima prevista (°C)", invert: true, unit: "°C" },
+  pm25_media:        { label: "PM2,5 — média diária prevista (µg/m³)", invert: true, unit: " µg/m³" },
+  pm25_max:          { label: "PM2,5 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³" },
+  pm10_media:        { label: "PM10 — média diária prevista (µg/m³)", invert: true, unit: " µg/m³" },
+  pm10_max:          { label: "PM10 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³" },
+  n_focos_queimadas: { label: "Focos de queimada observados", invert: true, unit: " focos" }
+};
+
+const CATEGORIES = [
+  { id: "agua",      label: "Abastecimento hídrico", periodSource: null,        indicators: ["iag0001", "iag0002", "iag0003", "intermitencia"] },
+  { id: "ar",        label: "Qualidade do ar",        periodSource: "clima",     indicators: ["pm25_media", "pm25_max", "pm10_media", "pm10_max"] },
+  { id: "clima",     label: "Clima",                  periodSource: "clima",     indicators: ["temp_max"] },
+  { id: "queimadas", label: "Queimadas",              periodSource: "queimadas", indicators: ["n_focos_queimadas"] }
+];
+
+function unitFor(id) { return INDICATOR_DEFS[id].unit; }
+
+const ALL_DATES = [...new Set([
+  ...PERIODS_CLIMA.map(p => p.date),
+  ...PERIODS_QUEIMADAS.map(p => p.date)
+])].sort();
+
+function dataHojeISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+const hojeISO = dataHojeISO();
+const passadasOuHoje = ALL_DATES.filter(d => d <= hojeISO);
+let selectedDate = passadasOuHoje.length ? passadasOuHoje[passadasOuHoje.length - 1] : (ALL_DATES.length ? ALL_DATES[ALL_DATES.length - 1] : null);
+
+function periodoPorData(lista, data) { return lista.find(p => p.date === data) || null; }
+
+function currentDataset(categoryId) {
+  const cat = CATEGORIES.find(c => c.id === categoryId);
+  if (cat.periodSource === "clima") {
+    const p = periodoPorData(PERIODS_CLIMA, selectedDate);
+    return p || { data: [], date: selectedDate, dateLabel: selectedDate || "sem dado" };
+  }
+  if (cat.periodSource === "queimadas") {
+    const p = periodoPorData(PERIODS_QUEIMADAS, selectedDate);
+    return p || { data: [], date: selectedDate, dateLabel: selectedDate || "sem dado" };
+  }
+  return { data: AGUA, date: null, dateLabel: "dado estrutural" };
+}
+
+function indicatorLabel(id, dataset) {
+  const def = INDICATOR_DEFS[id];
+  return dataset.dateLabel ? def.label + " — " + dataset.dateLabel : def.label;
+}
+
+function categoriaDisponivel(cat) {
+  if (cat.periodSource === "clima") return PERIODS_CLIMA.length > 0;
+  if (cat.periodSource === "queimadas") return PERIODS_QUEIMADAS.length > 0;
+  return true;
+}
+
+function popularCategorias(selectEl, keepValue) {
+  const prev = keepValue !== undefined ? keepValue : selectEl.value;
+  const disponiveis = CATEGORIES.filter(categoriaDisponivel);
+  selectEl.innerHTML = "";
+  disponiveis.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c.id; opt.textContent = c.label; selectEl.appendChild(opt);
+  });
+  if (prev && disponiveis.some(c => c.id === prev)) selectEl.value = prev;
+  else if (disponiveis.length) selectEl.value = disponiveis[0].id;
+}
+
+function popularVariaveis(indicatorSelectEl, categoryId, keepValue) {
+  const prev = keepValue !== undefined ? keepValue : indicatorSelectEl.value;
+  const cat = CATEGORIES.find(c => c.id === categoryId);
+  indicatorSelectEl.innerHTML = "";
+  cat.indicators.forEach(id => {
+    const opt = document.createElement("option");
+    opt.value = id; opt.textContent = INDICATOR_DEFS[id].label; indicatorSelectEl.appendChild(opt);
+  });
+  if (prev && cat.indicators.includes(prev)) indicatorSelectEl.value = prev;
+  else indicatorSelectEl.value = cat.indicators[0];
+}
+
+const map = L.map('map', { scrollWheelZoom: true }).setView([-15.3, -47.7], 7);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Esri, HERE, Garmin, FAO, NOAA, USGS', maxZoom: 14
+}).addTo(map);
+const boundaryLayer = L.geoJSON(BOUNDARIES, {
+  style: { color: '#5b6472', weight: 1, opacity: 0.7, fillOpacity: 0.85 }
+}).addTo(map);
+try { map.fitBounds(boundaryLayer.getBounds(), { padding: [10, 10] }); } catch (e) {}
+
+function porNome(lista) { const m = {}; lista.forEach(d => { m[d.municipio] = d; }); return m; }
+
+function renderMap(categoryId, indicatorId) {
+  const dataset = currentDataset(categoryId);
+  const unit = unitFor(indicatorId);
+  const byName = porNome(dataset.data);
+  const vals = dataset.data.map(d => d[indicatorId]).filter(v => v !== null && v !== undefined && !isNaN(v));
+  const min = vals.length ? Math.min(...vals) : 0;
+  const max = vals.length ? Math.max(...vals) : 1;
+  const invert = INDICATOR_DEFS[indicatorId].invert;
+
+  boundaryLayer.eachLayer(layer => {
+    const d = byName[layer.feature.properties.name];
+    const val = d ? d[indicatorId] : null;
+    const color = colorScale(val, min, max, invert);
+    const baseStyle = { fillColor: color, fillOpacity: 0.85, color: d ? UF_COLOR[d.uf] : '#5b6472', weight: 1.4 };
+    layer.setStyle(baseStyle); layer._baseStyle = baseStyle;
+    layer.off('mouseover').off('mouseout');
+    layer.on('mouseover', () => layer.setStyle({ weight: 3.2, fillOpacity: 0.97 }));
+    layer.on('mouseout', () => layer.setStyle(layer._baseStyle));
+    layer.unbindTooltip(); layer.unbindPopup();
+    layer.bindTooltip(layer.feature.properties.name, { sticky: true, direction: 'top', opacity: 0.9 });
+    if (d) {
+      const valTxt = (val === null || val === undefined || isNaN(val)) ? "s/ dado" : Number(val).toFixed(1) + unit;
+      layer.bindPopup(`<b>${d.municipio}</b> <span class="badge" style="background:${UF_COLOR[d.uf]}">${d.uf}</span><br>${indicatorLabel(indicatorId, dataset)}: <b>${valTxt}</b>`);
+    }
+  });
+
+  const chipsEl = document.getElementById('legendChips');
+  if (!vals.length) {
+    chipsEl.innerHTML = `<span class="legend-title">${indicatorLabel(indicatorId, dataset)} — sem dado para a data escolhida</span>`;
+    return;
+  }
+  const steps = 5, seq = [];
+  for (let i = 0; i < steps; i++) {
+    const t0 = min + (max - min) * (i / steps), t1 = min + (max - min) * ((i + 1) / steps), mid = (t0 + t1) / 2;
+    seq.push({ lo: t0, hi: t1, color: colorScale(mid, min, max, invert) });
+  }
+  let html = `<span class="legend-title">${indicatorLabel(indicatorId, dataset)}</span>`;
+  seq.forEach(s => { html += `<span class="legend-chip"><span class="swatch" style="background:${s.color}"></span>${s.lo.toFixed(0)}–${s.hi.toFixed(0)}${unit}</span>`; });
+  chipsEl.innerHTML = html;
+}
+
+let barChart = null;
+function renderChart(categoryId, indicatorId) {
+  const dataset = currentDataset(categoryId), invert = INDICATOR_DEFS[indicatorId].invert;
+  const sorted = [...dataset.data].sort((a, b) => {
+    const av = a[indicatorId] ?? -Infinity, bv = b[indicatorId] ?? -Infinity;
+    return invert ? bv - av : av - bv;
+  });
+  const labels = sorted.map(d => d.municipio + " (" + d.uf + ")");
+  const values = sorted.map(d => d[indicatorId]);
+  const colors = sorted.map(d => UF_COLOR[d.uf]);
+  const ctx = document.getElementById('barChart').getContext('2d');
+  if (barChart) barChart.destroy();
+  barChart = new Chart(ctx, {
+    type: 'bar', data: { labels, datasets: [{ label: indicatorLabel(indicatorId, dataset), data: values, backgroundColor: colors, borderRadius: 3 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, title: { display: true, text: indicatorLabel(indicatorId, dataset) + " — por município", font: { size: 13 } },
+        tooltip: { callbacks: { label: c => (c.raw === null || c.raw === undefined ? "s/ dado" : Number(c.raw).toFixed(1) + unitFor(indicatorId)) } } },
+      scales: { x: { beginAtZero: indicatorId !== "temp_max", ticks: { callback: v => v + unitFor(indicatorId) } }, y: { ticks: { font: { size: 10.5 } } } }
+    }
+  });
+  document.getElementById('barChart').parentElement.style.height = (Math.max(labels.length, 1) * 20 + 60) + "px";
+}
+
+function computeExtreme(indicatorId, data, mode) {
+  let best = null;
+  data.forEach(d => {
+    const v = d[indicatorId]; if (v === null || v === undefined || isNaN(v)) return;
+    if (best === null || (mode === "max" ? v > best.value : v < best.value)) best = { municipio: d.municipio, value: v };
+  });
+  return best;
+}
+
+function updateStatStrip() {
+  const clima = periodoPorData(PERIODS_CLIMA, selectedDate);
+  if (clima) {
+    const tempStat = computeExtreme("temp_max", clima.data, "max");
+    const pmStat = computeExtreme("pm25_media", clima.data, "max");
+    document.getElementById('statTempLabel').textContent = `Maior temp. máxima prevista (${clima.dateLabel})`;
+    document.getElementById('statPmLabel').textContent = `Maior média diária de PM2,5 (${clima.dateLabel})`;
+    document.getElementById('statTempValue').innerHTML = tempStat ? `${tempStat.municipio} <span class="unit">${tempStat.value.toFixed(1)}°C</span>` : "s/ dado";
+    document.getElementById('statPmValue').innerHTML = pmStat ? `${pmStat.municipio} <span class="unit">${pmStat.value.toFixed(1)} µg/m³</span>` : "s/ dado";
+  } else {
+    document.getElementById('statTempValue').innerHTML = "s/ dado";
+    document.getElementById('statPmValue').innerHTML = "s/ dado";
+  }
+  const q = periodoPorData(PERIODS_QUEIMADAS, selectedDate);
+  if (q) {
+    const focosStat = computeExtreme("n_focos_queimadas", q.data, "max");
+    document.getElementById('statFocosLabel').textContent = `Mais focos de queimada (${q.dateLabel})`;
+    document.getElementById('statFocosValue').innerHTML = (focosStat && focosStat.value > 0) ? `${focosStat.municipio} <span class="unit">${focosStat.value} focos</span>` : "nenhum registrado";
+  } else document.getElementById('statFocosValue').innerHTML = "s/ dado";
+}
+
+function onPeriodChange() { refrescarMapa(); refrescarGrafico(); updateStatStrip(); }
+
+function buildPeriodControls() {
+  const bar = document.getElementById('periodBar'); bar.innerHTML = "";
+  const label = document.createElement('span'); label.className = 'period-label'; label.textContent = 'Data da análise:'; bar.appendChild(label);
+  const input = document.createElement('input'); input.type = 'date';
+  const note = document.createElement('span'); note.className = 'period-note';
+  if (ALL_DATES.length) {
+    input.min = ALL_DATES[0]; input.max = ALL_DATES[ALL_DATES.length - 1]; input.value = selectedDate || ALL_DATES[ALL_DATES.length - 1];
+  } else { input.disabled = true; note.textContent = 'Histórico diário ainda não iniciado.'; }
+  input.addEventListener('change', () => {
+    if (!ALL_DATES.includes(input.value)) note.textContent = 'Não há nenhuma fonte diária armazenada nesse dia.';
+    else { selectedDate = input.value; note.textContent = ''; onPeriodChange(); }
+  });
+  bar.appendChild(input); bar.appendChild(note);
+  const activeView = document.querySelector('.view.active');
+  const catId = activeView && activeView.id === 'mapview' ? mapCategorySelect.value : chartCategorySelect.value;
+  if (catId === 'agua') note.textContent = 'Abastecimento é dado estrutural; a data altera apenas indicadores diários.';
+}
+
+const mapCategorySelect = document.getElementById('mapCategorySelect');
+const indicatorSelect = document.getElementById('indicatorSelect');
+const chartCategorySelect = document.getElementById('chartCategorySelect');
+const chartIndicatorSelect = document.getElementById('chartIndicatorSelect');
+function refrescarMapa() { renderMap(mapCategorySelect.value, indicatorSelect.value); }
+function refrescarGrafico() { renderChart(chartCategorySelect.value, chartIndicatorSelect.value); }
+popularCategorias(mapCategorySelect); popularVariaveis(indicatorSelect, mapCategorySelect.value);
+popularCategorias(chartCategorySelect); popularVariaveis(chartIndicatorSelect, chartCategorySelect.value);
+mapCategorySelect.addEventListener('change', () => { popularVariaveis(indicatorSelect, mapCategorySelect.value); buildPeriodControls(); refrescarMapa(); });
+indicatorSelect.addEventListener('change', refrescarMapa);
+chartCategorySelect.addEventListener('change', () => { popularVariaveis(chartIndicatorSelect, chartCategorySelect.value); buildPeriodControls(); refrescarGrafico(); });
+chartIndicatorSelect.addEventListener('change', refrescarGrafico);
+buildPeriodControls(); refrescarMapa(); refrescarGrafico(); updateStatStrip();
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    tab.classList.add('active'); document.getElementById(tab.dataset.view).classList.add('active');
+    buildPeriodControls(); if (tab.dataset.view === 'chartview') refrescarGrafico();
+    if (tab.dataset.view === 'mapview') { refrescarMapa(); setTimeout(() => map.invalidateSize(), 50); }
+  });
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,22 @@
+Package: PainelRIDE
+Type: Project
+Title: Painel RIDE-DF - Atualizacao Diaria
+Version: 0.1.0
+Authors@R: person("Equipe", "Painel RIDE", role = c("aut", "cre"), email = "noreply@example.com")
+Description: Pipeline diario para CAMS, queimadas INPE, abastecimento SINISA e painel historico da RIDE-DF.
+License: MIT
+Encoding: UTF-8
+Imports:
+    cli,
+    DBI,
+    duckdb,
+    dplyr,
+    ecmwfr,
+    exactextractr,
+    glue,
+    jsonlite,
+    lubridate,
+    purrr,
+    readr,
+    sf,
+    terra
