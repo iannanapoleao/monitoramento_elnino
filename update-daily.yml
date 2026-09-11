@@ -1,0 +1,47 @@
+name: Atualizar Painel RIDE
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 15:15 UTC = 12:15 em Brasilia (UTC-3). O ciclo CAMS 00 UTC ja deve estar publicado.
+    - cron: "15 15 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      ecmwfr_PAT: ${{ secrets.ECMWFR_PAT }}
+      TZ: America/Sao_Paulo
+
+    steps:
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Instalar dependencias R
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::cli, any::DBI, any::duckdb, any::dplyr, any::ecmwfr, any::exactextractr, any::glue, any::jsonlite, any::lubridate, any::purrr, any::readr, any::sf, any::terra
+          needs: website
+
+      - name: Atualizar dados e gerar painel
+        run: Rscript run_daily.R
+
+      - name: Salvar historico no GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ride_historico.duckdb docs/index.html
+          if git diff --cached --quiet; then
+            echo "Sem alteracoes para salvar"
+          else
+            git commit -m "Atualizacao diaria $(date +'%Y-%m-%d')"
+            git push
+          fi
