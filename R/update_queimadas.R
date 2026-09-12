@@ -14,22 +14,30 @@ baixar_focos_dia <- function(data) {
   tryCatch(read_csv(url, show_col_types = FALSE), error = function(e) NULL)
 }
 
+filtrar_aqua <- function(bruto) {
+  if (is.null(bruto) || !nrow(bruto)) return(NULL)
+  bruto |> filter(satelite %in% c("AQUA_M-M", "AQUA_M-T"))
+}
+
 atualizar_queimadas <- function() {
   mun_ride <- readRDS(path_municipios())
   codigos <- mun_ride |> st_drop_geometry() |> pull(code_muni) |> as.character()
 
-  # Tenta hoje e, se o arquivo diario ainda nao foi publicado, ontem.
+  # Tenta hoje. O satelite de referencia (AQUA) so passa pela regiao a tarde,
+  # entao o filtro precisa ser aplicado ANTES de decidir se ha dado disponivel -
+  # caso contrario o arquivo bruto (que ja tem outros satelites o dia todo)
+  # nunca parece vazio e o fallback para ontem nunca eh acionado.
   data_obs <- as.Date(now(tzone = TZ_RIDE))
-  bruto <- baixar_focos_dia(data_obs)
-  if (is.null(bruto) || !nrow(bruto)) {
+  focos <- filtrar_aqua(baixar_focos_dia(data_obs))
+
+  if (is.null(focos) || !nrow(focos)) {
     data_obs <- data_obs - 1
-    bruto <- baixar_focos_dia(data_obs)
+    focos <- filtrar_aqua(baixar_focos_dia(data_obs))
   }
-  if (is.null(bruto) || !nrow(bruto)) stop("BDQueimadas sem arquivo disponivel para hoje/ontem.")
+  if (is.null(focos) || !nrow(focos)) stop("BDQueimadas sem focos AQUA disponiveis para hoje/ontem.")
 
   # Mantem a mesma regra do projeto anterior para permitir comparabilidade historica.
-  focos <- bruto |>
-    filter(satelite %in% c("AQUA_M-M", "AQUA_M-T")) |>
+  focos <- focos |>
     filter(is.finite(lat), is.finite(lon), between(lat, -90, 90), between(lon, -180, 180)) |>
     mutate(municipio_id = as.character(municipio_id)) |>
     distinct(id, .keep_all = TRUE) |>
