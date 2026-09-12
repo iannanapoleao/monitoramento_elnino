@@ -14,34 +14,48 @@ baixar_focos_dia <- function(data) {
   tryCatch(read_csv(url, show_col_types = FALSE), error = function(e) NULL)
 }
 
-filtrar_aqua <- function(bruto) {
+limpar_focos <- function(bruto, codigos) {
   if (is.null(bruto) || !nrow(bruto)) return(NULL)
-  bruto |> filter(satelite %in% c("AQUA_M-M", "AQUA_M-T"))
+
+  focos <- bruto |>
+    filter(is.finite(lat), is.finite(lon), between(lat, -90, 90), between(lon, -180, 180)) |>
+    mutate(municipio_id = as.character(municipio_id)) |>
+    filter(municipio_id %in% codigos) |>
+    # Arredonda lat/lon (~100m de precisao) e deduplica por local no dia.
+    # Isso evita contar o mesmo ponto de calor varias vezes so porque
+    # um satelite geoestacionario (ex.: GOES-19) passa a cada 10 min,
+    # ou porque satelites diferentes detectaram o mesmo foco.
+    mutate(lat_r = round(lat, 3), lon_r = round(lon, 3)) |>
+    distinct(lat_r, lon_r, .keep_all = TRUE)
+
+  if (!nrow(focos)) return(NULL)
+  focos
 }
 
 atualizar_queimadas <- function() {
   mun_ride <- readRDS(path_municipios())
   codigos <- mun_ride |> st_drop_geometry() |> pull(code_muni) |> as.character()
 
-  # Tenta hoje. O satelite de referencia (AQUA) so passa pela regiao a tarde,
-  # entao o filtro precisa ser aplicado ANTES de decidir se ha dado disponivel -
-  # caso contrario o arquivo bruto (que ja tem outros satelites o dia todo)
-  # nunca parece vazio e o fallback para ontem nunca eh acionado.
+  # Tenta hoje; se o arquivo diario do INPE ainda nao foi publicado
+  # (nao existe ainda no servidor), cai para ontem.
   data_obs <- as.Date(now(tzone = TZ_RIDE))
-  focos <- filtrar_aqua(baixar_focos_dia(data_obs))
-
-  if (is.null(focos) || !nrow(focos)) {
+  bruto <- baixar_focos_dia(data_obs)
+  if (is.null(bruto) || !nrow(bruto)) {
     data_obs <- data_obs - 1
-    focos <- filtrar_aqua(baixar_focos_dia(data_obs))
+    bruto <- baixar_focos_dia(data_obs)
   }
-  if (is.null(focos) || !nrow(focos)) stop("BDQueimadas sem focos AQUA disponiveis para hoje/ontem.")
+  if (is.null(bruto) || !nrow(bruto)) stop("BDQueimadas sem arquivo disponivel para hoje/ontem.")
 
-  # Mantem a mesma regra do projeto anterior para permitir comparabilidade historica.
-  focos <- focos |>
-    filter(is.finite(lat), is.finite(lon), between(lat, -90, 90), between(lon, -180, 180)) |>
-    mutate(municipio_id = as.character(municipio_id)) |>
-    distinct(id, .keep_all = TRUE) |>
-    filter(municipio_id %in% codigos)
+  focos <- limpar_focos(bruto, codigos)
+  # Se hoje o arquivo existe mas nao tem NENHUM foco na RIDE ainda
+  # (ex.: dia comecou ha pouco), tenta complementar com o dado de ontem
+  # so quando hoje estiver vazio - assim nao mistura contagens de dois dias.
+  if (is.null(focos)) {
+    data_obs <- data_obs - 1
+    bruto_ontem <- baixar_focos_dia(data_obs)
+    focos <- limpar_focos(bruto_ontem, codigos)
+  }
+  if (is.null(focos)) stop("BDQueimadas sem focos na RIDE para hoje/ontem.")
 
   contagem <- focos |> count(municipio_id, name = "n_focos_queimadas")
   diario <- mun_ride |>
