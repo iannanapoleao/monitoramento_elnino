@@ -217,6 +217,7 @@
     padding: 18px;
   }
   canvas#barChart { max-height: 900px; }
+  canvas#seriesChart { max-height: 420px; }
 
   .leaflet-popup-content-wrapper { border-radius: 8px; }
   .leaflet-popup-content { font-family: var(--sans); font-size: 12.5px; line-height: 1.55; min-width: 190px; }
@@ -266,6 +267,7 @@
 <div class="tabs">
   <div class="tab active" data-view="mapview">Mapa</div>
   <div class="tab" data-view="chartview">Gráfico (ranking)</div>
+  <div class="tab" data-view="seriesview">Evolução (últimos dias)</div>
 </div>
 
 <div id="mapview" class="view active">
@@ -295,6 +297,28 @@
   <div class="chart-wrap">
     <canvas id="barChart"></canvas>
   </div>
+</div>
+
+<div id="seriesview" class="view">
+  <div class="controls">
+    <label for="seriesCategorySelect">Categoria:</label>
+    <select id="seriesCategorySelect"></select>
+    <label for="seriesIndicatorSelect">Variável:</label>
+    <select id="seriesIndicatorSelect"></select>
+    <label for="seriesMunicipioSelect">Município:</label>
+    <select id="seriesMunicipioSelect"></select>
+    <label for="seriesDaysSelect">Período:</label>
+    <select id="seriesDaysSelect">
+      <option value="7" selected>Últimos 7 dias</option>
+      <option value="14">Últimos 14 dias</option>
+      <option value="30">Últimos 30 dias</option>
+      <option value="all">Todo o histórico</option>
+    </select>
+  </div>
+  <div class="chart-wrap" style="height:440px;">
+    <canvas id="seriesChart"></canvas>
+  </div>
+  <div class="period-note" id="seriesNote" style="margin-top:8px;"></div>
 </div>
 
 <footer class="footnote">
@@ -545,6 +569,112 @@ function buildPeriodControls() {
   if (catId === 'agua') note.textContent = 'Abastecimento é dado estrutural; a data altera apenas indicadores diários.';
 }
 
+// ---- Aba "Evolução (últimos dias)": série temporal por município ----
+const SERIES_CATEGORIES = CATEGORIES.filter(c => c.periodSource !== null);
+
+function categoriaDisponivelSeries(cat) {
+  if (cat.periodSource === "clima") return PERIODS_CLIMA.length > 0;
+  if (cat.periodSource === "queimadas") return PERIODS_QUEIMADAS.length > 0;
+  return false;
+}
+
+function popularCategoriasSeries(selectEl) {
+  const prev = selectEl.value;
+  const disponiveis = SERIES_CATEGORIES.filter(categoriaDisponivelSeries);
+  selectEl.innerHTML = "";
+  disponiveis.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c.id; opt.textContent = c.label; selectEl.appendChild(opt);
+  });
+  if (prev && disponiveis.some(c => c.id === prev)) selectEl.value = prev;
+  else if (disponiveis.length) selectEl.value = disponiveis[0].id;
+}
+
+function popularMunicipiosSeries(selectEl) {
+  const prev = selectEl.value;
+  const nomes = [...AGUA].sort((a, b) => a.municipio.localeCompare(b.municipio, 'pt-BR'));
+  selectEl.innerHTML = "";
+  nomes.forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = m.municipio; opt.textContent = `${m.municipio} (${m.uf})`; selectEl.appendChild(opt);
+  });
+  if (prev && nomes.some(m => m.municipio === prev)) selectEl.value = prev;
+  else if (nomes.length) selectEl.value = nomes[0].municipio;
+}
+
+let seriesChart = null;
+function renderSeriesChart() {
+  const categoryId = seriesCategorySelect.value;
+  const cat = SERIES_CATEGORIES.find(c => c.id === categoryId);
+  const noteEl = document.getElementById('seriesNote');
+  if (!cat) { noteEl.textContent = "Ainda não há histórico diário disponível."; return; }
+
+  const indicatorId = seriesIndicatorSelect.value;
+  const municipio = seriesMunicipioSelect.value;
+  const daysBack = seriesDaysSelect.value;
+  const lista = cat.periodSource === "clima" ? PERIODS_CLIMA : PERIODS_QUEIMADAS;
+  const ordenada = [...lista].sort((a, b) => a.date.localeCompare(b.date));
+  const janela = daysBack === "all" ? ordenada : ordenada.slice(-parseInt(daysBack, 10));
+
+  const labels = janela.map(p => p.dateLabel);
+  const values = janela.map(p => {
+    const row = p.data.find(d => d.municipio === municipio);
+    const v = row ? row[indicatorId] : null;
+    return (v === null || v === undefined || isNaN(v)) ? null : v;
+  });
+
+  noteEl.textContent = janela.length ? "" : "Ainda não há histórico suficiente para esta categoria.";
+
+  const ctx = document.getElementById('seriesChart').getContext('2d');
+  if (seriesChart) seriesChart.destroy();
+  seriesChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: `${INDICATOR_DEFS[indicatorId].label} — ${municipio}`,
+        data: values,
+        borderColor: '#2f6f5e',
+        backgroundColor: 'rgba(47,111,94,0.12)',
+        borderWidth: 2,
+        pointRadius: 3.5,
+        pointBackgroundColor: '#2f6f5e',
+        spanGaps: true,
+        tension: 0.25,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        title: { display: true, text: `${INDICATOR_DEFS[indicatorId].label} — ${municipio}`, font: { size: 13 } },
+        tooltip: { callbacks: { label: c => (c.raw === null || c.raw === undefined ? "s/ dado" : Number(c.raw).toFixed(1) + unitFor(indicatorId)) } }
+      },
+      scales: {
+        y: { beginAtZero: indicatorId !== "temp_max", ticks: { callback: v => v + unitFor(indicatorId) } },
+        x: { ticks: { font: { size: 10.5 } } }
+      }
+    }
+  });
+}
+
+function refrescarSeries() { renderSeriesChart(); }
+
+const seriesCategorySelect = document.getElementById('seriesCategorySelect');
+const seriesIndicatorSelect = document.getElementById('seriesIndicatorSelect');
+const seriesMunicipioSelect = document.getElementById('seriesMunicipioSelect');
+const seriesDaysSelect = document.getElementById('seriesDaysSelect');
+
+popularCategoriasSeries(seriesCategorySelect);
+popularVariaveis(seriesIndicatorSelect, seriesCategorySelect.value);
+popularMunicipiosSeries(seriesMunicipioSelect);
+
+seriesCategorySelect.addEventListener('change', () => { popularVariaveis(seriesIndicatorSelect, seriesCategorySelect.value); refrescarSeries(); });
+seriesIndicatorSelect.addEventListener('change', refrescarSeries);
+seriesMunicipioSelect.addEventListener('change', refrescarSeries);
+seriesDaysSelect.addEventListener('change', refrescarSeries);
+
 const mapCategorySelect = document.getElementById('mapCategorySelect');
 const indicatorSelect = document.getElementById('indicatorSelect');
 const chartCategorySelect = document.getElementById('chartCategorySelect');
@@ -563,8 +693,16 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     tab.classList.add('active'); document.getElementById(tab.dataset.view).classList.add('active');
-    buildPeriodControls(); if (tab.dataset.view === 'chartview') refrescarGrafico();
-    if (tab.dataset.view === 'mapview') { refrescarMapa(); setTimeout(() => map.invalidateSize(), 50); }
+    const periodBar = document.getElementById('periodBar');
+    if (tab.dataset.view === 'seriesview') {
+      periodBar.style.display = 'none';
+      refrescarSeries();
+    } else {
+      periodBar.style.display = '';
+      buildPeriodControls();
+      if (tab.dataset.view === 'chartview') refrescarGrafico();
+      if (tab.dataset.view === 'mapview') { refrescarMapa(); setTimeout(() => map.invalidateSize(), 50); }
+    }
   });
 });
 </script>
