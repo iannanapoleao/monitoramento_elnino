@@ -389,7 +389,7 @@ const CLASSES_BOLETIM = [
 ];
 
 const NOTA_RELATIVA_AGUA = "Escala relativa entre os 34 municípios (dado estrutural, sem limite oficial).";
-const NOTA_RELATIVA_PICO = "Escala relativa ao dia: os limites de 24 h (CONAMA/OMS) não se aplicam a picos horários.";
+const NOTA_PICO = "Pico horário classificado com os limiares de 24 h: leitura conservadora, tende a classificar acima da média diária, pois os limites foram definidos para médias de 24 h.";
 
 const INDICATOR_DEFS = {
   iag0001:           { label: "Atendimento total com rede (%)", invert: false, unit: "%", nota: NOTA_RELATIVA_AGUA },
@@ -402,11 +402,15 @@ const INDICATOR_DEFS = {
   pm25_media:        { label: "PM2,5 — média diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS",
                        classificacao: { cortes: [null, 25, 50, 75],
                          fonte: "Limiares do boletim do CIEVS-MT. Os cortes de 25 e 50 µg/m³ coincidem com os degraus PI-4 e PI-2 (24 h) da Resolução CONAMA 506/2024; 75 µg/m³ é a meta intermediária 1 da OMS (2021)." } },
-  pm25_max:          { label: "PM2,5 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS", nota: NOTA_RELATIVA_PICO },
+  pm25_max:          { label: "PM2,5 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS",
+                       classificacao: { cortes: [null, 25, 50, 75],
+                         fonte: NOTA_PICO + " Cortes do boletim do CIEVS-MT (25/50/75 µg/m³); 25 e 50 coincidem com PI-4 e PI-2 da CONAMA 506/2024." } },
   pm10_media:        { label: "PM10 — média diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS",
                        classificacao: { cortes: [null, 50, 100, 150],
                          fonte: "Não consta no boletim do CIEVS-MT: extrapolação da mesma lógica do PM2,5 (metas intermediárias da OMS 2021, 24 h). Os cortes de 50 e 100 µg/m³ coincidem com PI-4 e PI-2 da CONAMA 506/2024." } },
-  pm10_max:          { label: "PM10 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS", nota: NOTA_RELATIVA_PICO },
+  pm10_max:          { label: "PM10 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS",
+                       classificacao: { cortes: [null, 50, 100, 150],
+                         fonte: NOTA_PICO + " Cortes de 50/100/150 µg/m³: extrapolação que não consta no boletim do CIEVS-MT." } },
   n_focos_queimadas: { label: "Focos de queimada observados", invert: true, unit: " focos", casas: 0 }
 };
 
