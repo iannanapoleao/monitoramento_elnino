@@ -67,6 +67,26 @@ criar_schema <- function(con) {
       executado_em TIMESTAMP
     )")
 
+  # Um registro por foco (deduplicado por local ~100 m no dia), com coordenadas.
+  # A contagem de queimadas_diarias sai destes mesmos registros.
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS focos_pontos (
+      data_observacao DATE,
+      data_hora_gmt TIMESTAMP,
+      lat DOUBLE,
+      lon DOUBLE,
+      satelite VARCHAR,
+      referencia BOOLEAN,
+      code_muni VARCHAR,
+      municipio VARCHAR,
+      uf VARCHAR,
+      bioma VARCHAR,
+      frp DOUBLE,
+      risco_fogo DOUBLE,
+      dias_sem_chuva DOUBLE,
+      executado_em TIMESTAMP
+    )")
+
   # Mantem o historico anterior sem misturar a antiga media de 5 dias
   # com a nova serie diaria.
   DBI::dbExecute(con, "
@@ -101,5 +121,19 @@ upsert_por_datas <- function(con, tabela, dados, coluna_data) {
     )
   }
   DBI::dbAppendTable(con, tabela, dados)
+  invisible(NULL)
+}
+
+# Apaga as datas informadas (mesmo que o novo lote esteja vazio) e grava o lote.
+# Usado quando "arquivo existe e nao tem foco" precisa limpar pontos antigos do dia.
+substituir_por_datas <- function(con, tabela, datas, dados, coluna_data) {
+  for (d in datas) {
+    DBI::dbExecute(
+      con,
+      sprintf("DELETE FROM %s WHERE %s = ?", tabela, coluna_data),
+      params = list(as.Date(d, origin = "1970-01-01"))
+    )
+  }
+  if (nrow(dados)) DBI::dbAppendTable(con, tabela, dados)
   invisible(NULL)
 }
