@@ -14,6 +14,13 @@ path_municipios <- function() path_data("mun_ride_epsg4326.rds")
 path_agua <- function() path_data("sinisa_agua.csv")
 
 TZ_RIDE <- "America/Sao_Paulo"
+
+# Queimadas (INPE/BDQueimadas)
+# Satelite de referencia do Programa Queimadas: serve para comparar a serie
+# historica ao longo dos anos. Aqui ele so MARCA os pontos (nao filtra a contagem).
+SATELITE_REFERENCIA <- "AQUA_M-T"
+# Quantos dias de pontos (focos) sao embutidos no HTML. O banco guarda tudo.
+DIAS_PONTOS_NO_PAINEL <- 30
 CAMS_DATASET <- "cams-global-atmospheric-composition-forecasts"
 CAMS_MARGIN_DEG <- 0.5
 CAMS_LEAD_HOURS <- 0:120
