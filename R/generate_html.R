@@ -67,11 +67,40 @@ gerar_html <- function() {
       })
   } else list()
 
+  # ---- Pontos dos focos (mapa de queimadas) ----
+  # Um array por foco: [lat, lon, "AAAA-MM-DD HH:MM" (hora de Brasilia), satelite,
+  #   referencia, code_muni, bioma, frp, risco_fogo, dias_sem_chuva]
+  # So os ultimos DIAS_PONTOS_NO_PAINEL dias entram no HTML (o banco guarda todos).
+  pontos <- tryCatch(DBI::dbGetQuery(con, "
+    SELECT data_observacao, data_hora_gmt, lat, lon, satelite, referencia, code_muni,
+           bioma, frp, risco_fogo, dias_sem_chuva
+    FROM focos_pontos ORDER BY data_observacao, data_hora_gmt"), error = function(e) NULL)
+
+  pontos_json <- "{}"
+  if (!is.null(pontos) && nrow(pontos)) {
+    pontos$data_observacao <- as.Date(pontos$data_observacao)
+    pontos$referencia <- as.logical(pontos$referencia)
+    pontos$hora_local <- format(
+      with_tz(force_tz(as.POSIXct(pontos$data_hora_gmt), "UTC"), TZ_RIDE),
+      "%Y-%m-%d %H:%M"
+    )
+    colunas <- c("lat", "lon", "hora_local", "satelite", "referencia", "code_muni",
+                 "bioma", "frp", "risco_fogo", "dias_sem_chuva")
+    manter <- tail(sort(unique(pontos$data_observacao)), DIAS_PONTOS_NO_PAINEL)
+    pontos_por_dia <- lapply(seq_along(manter), function(i) {
+      p <- pontos[pontos$data_observacao == manter[i], colunas, drop = FALSE]
+      unname(pmap(unname(as.list(p)), function(...) list(...)))
+    })
+    names(pontos_por_dia) <- as.character(manter)
+    pontos_json <- as.character(toJSON(pontos_por_dia, auto_unbox = TRUE, na = "null", digits = 5))
+  }
+
   template <- paste(readLines(path_template(), encoding = "UTF-8", warn = FALSE), collapse = "\n")
   html <- template
   html <- sub("__AGUA_JSON__", as.character(toJSON(agua, auto_unbox = TRUE, na = "null", digits = NA)), html, fixed = TRUE)
   html <- sub("__PERIODS_CLIMA_JSON__", as.character(toJSON(periods_clima, auto_unbox = TRUE, na = "null", digits = NA)), html, fixed = TRUE)
   html <- sub("__PERIODS_QUEIMADAS_JSON__", as.character(toJSON(periods_queimadas, auto_unbox = TRUE, na = "null", digits = NA)), html, fixed = TRUE)
+  html <- sub("__PONTOS_JSON__", pontos_json, html, fixed = TRUE)
   html <- sub("__BOUNDARIES_JSON__", boundaries_json, html, fixed = TRUE)
   html <- sub("__STAT_PIOR_ATENDIMENTO__", stat_pior, html, fixed = TRUE)
   html <- sub("__STAT_MAIOR_INTERMITENCIA__", stat_interm, html, fixed = TRUE)
