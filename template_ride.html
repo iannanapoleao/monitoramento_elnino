@@ -207,6 +207,12 @@
   .legend-chip .swatch {
     width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
   }
+  .pt-dot { display:inline-block; width:10px; height:10px; border-radius:50%; border:1.5px solid #1c2a2e; vertical-align:-1px; margin-right:4px; box-sizing:border-box; }
+  .pt-ref { background:#1c2a2e; }
+  .pt-outro { background:#ffffff; }
+  .focos-controls { display:none; align-items:center; gap:10px; margin-left:14px; padding-left:14px; border-left:1px solid var(--border); flex-wrap:wrap; }
+  .focos-controls label.chk { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+  .focos-note { margin-left:8px; color:var(--accent-2); }
   .uf-row { margin-top: 6px; }
   .uf-dot { display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px; }
 
@@ -276,9 +282,22 @@
     <select id="mapCategorySelect"></select>
     <label for="indicatorSelect">Variável:</label>
     <select id="indicatorSelect"></select>
+    <span class="focos-controls" id="focosControls">
+      <label class="chk" for="focosToggle"><input type="checkbox" id="focosToggle" checked> Mostrar pontos dos focos</label>
+      <select id="focosSatSelect" aria-label="Satélites exibidos">
+        <option value="todos">Todos os satélites</option>
+        <option value="ref">Só satélite de referência</option>
+      </select>
+    </span>
   </div>
   <div id="map"></div>
   <div class="legend-box" id="legendChips"></div>
+  <div class="legend-box" id="focosBox" style="display:none;">
+    <span class="legend-title">Focos de calor:</span>
+    <span><span class="pt-dot pt-ref"></span>satélite de referência</span>
+    <span><span class="pt-dot pt-outro"></span>demais satélites</span>
+    <span class="focos-note" id="focosNote"></span>
+  </div>
   <div class="legend-box uf-row">
     <span style="font-weight:600; color:var(--muted);">UF (borda do município):</span>
     <span><span class="uf-dot" style="background:#1f4e46;"></span>DF</span>
@@ -336,6 +355,9 @@ const AGUA = __AGUA_JSON__;
 const PERIODS_CLIMA = __PERIODS_CLIMA_JSON__;
 const PERIODS_QUEIMADAS = __PERIODS_QUEIMADAS_JSON__;
 const BOUNDARIES = __BOUNDARIES_JSON__;
+// PONTOS_FOCOS - { "AAAA-MM-DD": [[lat, lon, "AAAA-MM-DD HH:MM" (Brasilia), satelite,
+//                  referencia, code_muni, bioma, frp, risco_fogo, dias_sem_chuva], ...] }
+const PONTOS_FOCOS = __PONTOS_JSON__;
 
 const UF_COLOR = { DF: "#1f4e46", GO: "#3d7a4a", MG: "#a3623e" };
 
@@ -493,6 +515,74 @@ function renderMap(categoryId, indicatorId) {
   let html = `<span class="legend-title">${indicatorLabel(indicatorId, dataset)}</span>`;
   seq.forEach(s => { html += `<span class="legend-chip"><span class="swatch" style="background:${s.color}"></span>${s.lo.toFixed(0)}–${s.hi.toFixed(0)}${unit}</span>`; });
   chipsEl.innerHTML = html;
+}
+
+// ---- Pontos dos focos de calor (aparecem so na categoria "Queimadas") ----
+const FOCO = { LAT: 0, LON: 1, HORA: 2, SAT: 3, REF: 4, MUN: 5, BIOMA: 6, FRP: 7, RISCO: 8, SECA: 9 };
+const MUN_POR_CODIGO = {};
+BOUNDARIES.features.forEach(f => {
+  MUN_POR_CODIGO[String(Math.round(Number(f.properties.code_muni)))] = { nome: f.properties.name, uf: f.properties.uf };
+});
+const focosLayer = L.layerGroup().addTo(map);
+
+function fmtDataHora(txt) { // "2026-09-20 14:35" -> "20/09/2026 14:35"
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}:\d{2}))?/.exec(txt || "");
+  return m ? `${m[3]}/${m[2]}/${m[1]}${m[4] ? " " + m[4] : ""}` : "";
+}
+function fmtNum(v, casas) { return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas }); }
+
+function popupFoco(f) {
+  const mun = MUN_POR_CODIGO[String(f[FOCO.MUN])];
+  const sat = f[FOCO.SAT] ? `${f[FOCO.SAT]}${f[FOCO.REF] ? " (referência)" : ""}` : "não informado";
+  const linhas = [];
+  if (f[FOCO.HORA]) linhas.push(`Detectado em ${fmtDataHora(f[FOCO.HORA])} (Brasília)`);
+  linhas.push(`Satélite: ${sat}`);
+  const extras = [];
+  if (f[FOCO.FRP] !== null && f[FOCO.FRP] !== undefined) extras.push(`FRP: ${fmtNum(f[FOCO.FRP], 1)} MW`);
+  if (f[FOCO.SECA] !== null && f[FOCO.SECA] !== undefined) extras.push(`Dias sem chuva: ${fmtNum(f[FOCO.SECA], 0)}`);
+  if (f[FOCO.RISCO] !== null && f[FOCO.RISCO] !== undefined) extras.push(`Risco de fogo (INPE): ${fmtNum(f[FOCO.RISCO], 2)}`);
+  if (f[FOCO.BIOMA]) extras.push(`Bioma: ${f[FOCO.BIOMA]}`);
+  if (extras.length) linhas.push(extras.join(" · "));
+  const cab = mun
+    ? `<b>Foco de calor</b> · ${mun.nome} <span class="badge" style="background:${UF_COLOR[mun.uf] || '#5b6472'}">${mun.uf}</span>`
+    : `<b>Foco de calor</b>`;
+  return `${cab}<br>${linhas.join("<br>")}`;
+}
+
+function renderFocos() {
+  focosLayer.clearLayers();
+  const controls = document.getElementById('focosControls');
+  const box = document.getElementById('focosBox');
+  const note = document.getElementById('focosNote');
+  const ehQueimadas = mapCategorySelect.value === "queimadas";
+  controls.style.display = ehQueimadas ? "inline-flex" : "none";
+  if (!ehQueimadas) { box.style.display = "none"; return; }
+  box.style.display = "";
+  if (!document.getElementById('focosToggle').checked) { note.textContent = ""; return; }
+
+  const dias = Object.keys(PONTOS_FOCOS).sort();
+  if (!dias.length) { note.textContent = "O histórico de pontos começa na próxima atualização automática."; return; }
+  const doDia = PONTOS_FOCOS[selectedDate];
+  if (!doDia) {
+    const q = periodoPorData(PERIODS_QUEIMADAS, selectedDate);
+    note.textContent = q ? `Pontos não armazenados para esta data (o histórico de pontos começa em ${fmtDataHora(dias[0])}).` : "";
+    return;
+  }
+
+  const soRef = document.getElementById('focosSatSelect').value === "ref";
+  const lista = soRef ? doDia.filter(f => f[FOCO.REF]) : doDia;
+  lista.forEach(f => {
+    const ref = !!f[FOCO.REF];
+    L.circleMarker([f[FOCO.LAT], f[FOCO.LON]], {
+      radius: ref ? 4 : 3.5, weight: 1.5, color: "#1c2a2e", opacity: 1,
+      fillColor: ref ? "#1c2a2e" : "#ffffff", fillOpacity: ref ? 0.95 : 0.9
+    }).bindPopup(popupFoco(f)).addTo(focosLayer);
+  });
+  const nRef = doDia.filter(f => f[FOCO.REF]).length;
+  const q = periodoPorData(PERIODS_QUEIMADAS, selectedDate);
+  note.textContent = `${lista.length} ponto(s) exibido(s) em ${q ? q.dateLabel : selectedDate}` +
+    (soRef ? "" : ` (${nRef} do satélite de referência)`) +
+    ". Cada ponto é uma detecção por satélite, não necessariamente um incêndio distinto.";
 }
 
 let barChart = null;
@@ -679,12 +769,14 @@ const mapCategorySelect = document.getElementById('mapCategorySelect');
 const indicatorSelect = document.getElementById('indicatorSelect');
 const chartCategorySelect = document.getElementById('chartCategorySelect');
 const chartIndicatorSelect = document.getElementById('chartIndicatorSelect');
-function refrescarMapa() { renderMap(mapCategorySelect.value, indicatorSelect.value); }
+function refrescarMapa() { renderMap(mapCategorySelect.value, indicatorSelect.value); renderFocos(); }
 function refrescarGrafico() { renderChart(chartCategorySelect.value, chartIndicatorSelect.value); }
 popularCategorias(mapCategorySelect); popularVariaveis(indicatorSelect, mapCategorySelect.value);
 popularCategorias(chartCategorySelect); popularVariaveis(chartIndicatorSelect, chartCategorySelect.value);
 mapCategorySelect.addEventListener('change', () => { popularVariaveis(indicatorSelect, mapCategorySelect.value); buildPeriodControls(); refrescarMapa(); });
 indicatorSelect.addEventListener('change', refrescarMapa);
+document.getElementById('focosToggle').addEventListener('change', renderFocos);
+document.getElementById('focosSatSelect').addEventListener('change', renderFocos);
 chartCategorySelect.addEventListener('change', () => { popularVariaveis(chartIndicatorSelect, chartCategorySelect.value); buildPeriodControls(); refrescarGrafico(); });
 chartIndicatorSelect.addEventListener('change', refrescarGrafico);
 buildPeriodControls(); refrescarMapa(); refrescarGrafico(); updateStatStrip();
