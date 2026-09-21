@@ -207,12 +207,13 @@
   .legend-chip .swatch {
     width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
   }
-  .pt-dot { display:inline-block; width:10px; height:10px; border-radius:50%; border:1.5px solid #1c2a2e; vertical-align:-1px; margin-right:4px; box-sizing:border-box; }
-  .pt-ref { background:#1c2a2e; }
-  .pt-outro { background:#ffffff; }
+  .pt-dot { display:inline-block; width:10px; height:10px; border-radius:50%; border:1.5px solid #ffffff; box-shadow:0 0 0 1px #9aa3a0; vertical-align:-1px; margin-right:4px; box-sizing:border-box; }
+  .pt-ref { background:#b3120f; }
+  .pt-outro { background:#f0463c; }
   .focos-controls { display:none; align-items:center; gap:10px; margin-left:14px; padding-left:14px; border-left:1px solid var(--border); flex-wrap:wrap; }
   .focos-controls label.chk { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
   .focos-note { margin-left:8px; color:var(--accent-2); }
+  .legend-info { font-size: 11.5px; margin-top: 6px; line-height: 1.5; }
   .uf-row { margin-top: 6px; }
   .uf-dot { display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px; }
 
@@ -292,6 +293,7 @@
   </div>
   <div id="map"></div>
   <div class="legend-box" id="legendChips"></div>
+  <div class="legend-box legend-info" id="legendInfo"></div>
   <div class="legend-box" id="focosBox" style="display:none;">
     <span class="legend-title">Focos de calor:</span>
     <span><span class="pt-dot pt-ref"></span>satélite de referência</span>
@@ -376,18 +378,65 @@ function colorScale(value, min, max, invert) {
   return `rgb(${r},${g},${b})`;
 }
 
+// Classes do boletim semanal El Nino do CIEVS-MT (ARARAS MT): verde, amarela, laranja, vermelha, roxa.
+// "cortes" = limite INFERIOR (>=) das classes amarela, laranja, vermelha e roxa; null = classe nao usada.
+const CLASSES_BOLETIM = [
+  { nome: "Verde",    cor: "#2f9e5a", texto: "monitoramento de rotina" },
+  { nome: "Amarela",  cor: "#e5b800", texto: "atenção" },
+  { nome: "Laranja",  cor: "#e07b00", texto: "alerta" },
+  { nome: "Vermelha", cor: "#d62828", texto: "alerta elevado" },
+  { nome: "Roxa",     cor: "#5b2bb5", texto: "situação excepcional" }
+];
+
+const NOTA_RELATIVA_AGUA = "Escala relativa entre os 34 municípios (dado estrutural, sem limite oficial).";
+const NOTA_RELATIVA_PICO = "Escala relativa ao dia: os limites de 24 h (CONAMA/OMS) não se aplicam a picos horários.";
+
 const INDICATOR_DEFS = {
-  iag0001:           { label: "Atendimento total com rede (%)", invert: false, unit: "%" },
-  iag0002:           { label: "Atendimento urbano (%)", invert: false, unit: "%" },
-  iag0003:           { label: "Atendimento rural (%)", invert: false, unit: "%" },
-  intermitencia:     { label: "Incidência de intermitência (%)", invert: true, unit: "%" },
-  temp_max:          { label: "Temperatura máxima prevista (°C)", invert: true, unit: "°C" },
-  pm25_media:        { label: "PM2,5 — média diária prevista (µg/m³)", invert: true, unit: " µg/m³" },
-  pm25_max:          { label: "PM2,5 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³" },
-  pm10_media:        { label: "PM10 — média diária prevista (µg/m³)", invert: true, unit: " µg/m³" },
-  pm10_max:          { label: "PM10 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³" },
-  n_focos_queimadas: { label: "Focos de queimada observados", invert: true, unit: " focos" }
+  iag0001:           { label: "Atendimento total com rede (%)", invert: false, unit: "%", nota: NOTA_RELATIVA_AGUA },
+  iag0002:           { label: "Atendimento urbano (%)", invert: false, unit: "%", nota: NOTA_RELATIVA_AGUA },
+  iag0003:           { label: "Atendimento rural (%)", invert: false, unit: "%", nota: NOTA_RELATIVA_AGUA },
+  intermitencia:     { label: "Incidência de intermitência (%)", invert: true, unit: "%", nota: NOTA_RELATIVA_AGUA },
+  temp_max:          { label: "Temperatura máxima prevista (°C)", invert: true, unit: "°C", tag: "PROJEÇÃO CAMS",
+                       classificacao: { cortes: [34, 37, 40, 42],
+                         fonte: "Limiares do boletim semanal El Niño do CIEVS-MT (ARARAS MT), definidos para Mato Grosso e aplicados aqui sem recalibração; não são limites do INMET. A temperatura vem do CAMS (grade de ~44 km), que tende a suavizar picos." } },
+  pm25_media:        { label: "PM2,5 — média diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS",
+                       classificacao: { cortes: [null, 25, 50, 75],
+                         fonte: "Limiares do boletim do CIEVS-MT. Os cortes de 25 e 50 µg/m³ coincidem com os degraus PI-4 e PI-2 (24 h) da Resolução CONAMA 506/2024; 75 µg/m³ é a meta intermediária 1 da OMS (2021)." } },
+  pm25_max:          { label: "PM2,5 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS", nota: NOTA_RELATIVA_PICO },
+  pm10_media:        { label: "PM10 — média diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS",
+                       classificacao: { cortes: [null, 50, 100, 150],
+                         fonte: "Não consta no boletim do CIEVS-MT: extrapolação da mesma lógica do PM2,5 (metas intermediárias da OMS 2021, 24 h). Os cortes de 50 e 100 µg/m³ coincidem com PI-4 e PI-2 da CONAMA 506/2024." } },
+  pm10_max:          { label: "PM10 — máxima diária prevista (µg/m³)", invert: true, unit: " µg/m³", tag: "PROJEÇÃO CAMS", nota: NOTA_RELATIVA_PICO },
+  n_focos_queimadas: { label: "Focos de queimada observados", invert: true, unit: " focos", casas: 0 }
 };
+
+function faixaDoValor(v, cls) {
+  if (v === null || v === undefined || isNaN(v)) return null;
+  let idx = 0;
+  cls.cortes.forEach((c, i) => { if (c !== null && v >= c) idx = i + 1; });
+  return idx;
+}
+function faixasAtivas(cls) {
+  const out = [{ idx: 0, lo: null }];
+  cls.cortes.forEach((c, i) => { if (c !== null) out.push({ idx: i + 1, lo: c }); });
+  return out;
+}
+function coresDaClassificacao(cls) { return CLASSES_BOLETIM.map(c => c.cor); }
+function chipsDaClassificacao(cls, unit) {
+  const ativas = faixasAtivas(cls), cores = coresDaClassificacao(cls);
+  return ativas.map((f, k) => {
+    const lo = f.lo, hi = k + 1 < ativas.length ? ativas[k + 1].lo : null;
+    let faixa;
+    if (lo === null) faixa = `&lt; ${hi}${unit}`;
+    else if (hi === null) faixa = `≥ ${lo}${unit}`;
+    else faixa = `${lo}–${hi}${unit}`;
+    return `<span class="legend-chip"><span class="swatch" style="background:${cores[f.idx]}"></span>${CLASSES_BOLETIM[f.idx].nome} ${faixa}</span>`;
+  }).join("");
+}
+function classeRiscoFogo(v) { // escala oficial do INPE (0 a 1)
+  if (v === null || v === undefined || isNaN(v)) return null;
+  return v < 0.15 ? "Mínimo" : v <= 0.40 ? "Baixo" : v <= 0.70 ? "Médio" : v <= 0.95 ? "Alto" : "Crítico";
+}
 
 const CATEGORIES = [
   { id: "agua",      label: "Abastecimento hídrico", periodSource: null,        indicators: ["iag0001", "iag0002", "iag0003", "intermitencia"] },
@@ -483,12 +532,16 @@ function renderMap(categoryId, indicatorId) {
   const vals = dataset.data.map(d => d[indicatorId]).filter(v => v !== null && v !== undefined && !isNaN(v));
   const min = vals.length ? Math.min(...vals) : 0;
   const max = vals.length ? Math.max(...vals) : 1;
-  const invert = INDICATOR_DEFS[indicatorId].invert;
+  const def = INDICATOR_DEFS[indicatorId];
+  const invert = def.invert;
+  const cls = def.classificacao || null;
+  const coresCls = cls ? coresDaClassificacao(cls) : null;
 
   boundaryLayer.eachLayer(layer => {
     const d = byName[layer.feature.properties.name];
     const val = d ? d[indicatorId] : null;
-    const color = colorScale(val, min, max, invert);
+    const idxCls = cls ? faixaDoValor(val, cls) : null;
+    const color = cls ? (idxCls === null ? "#bdbdbd" : coresCls[idxCls]) : colorScale(val, min, max, invert);
     const baseStyle = { fillColor: color, fillOpacity: 0.85, color: d ? UF_COLOR[d.uf] : '#5b6472', weight: 1.4 };
     layer.setStyle(baseStyle); layer._baseStyle = baseStyle;
     layer.off('mouseover').off('mouseout');
@@ -497,22 +550,35 @@ function renderMap(categoryId, indicatorId) {
     layer.unbindTooltip(); layer.unbindPopup();
     layer.bindTooltip(layer.feature.properties.name, { sticky: true, direction: 'top', opacity: 0.9 });
     if (d) {
-      const valTxt = (val === null || val === undefined || isNaN(val)) ? "s/ dado" : Number(val).toFixed(1) + unit;
-      layer.bindPopup(`<b>${d.municipio}</b> <span class="badge" style="background:${UF_COLOR[d.uf]}">${d.uf}</span><br>${indicatorLabel(indicatorId, dataset)}: <b>${valTxt}</b>`);
+      const valTxt = (val === null || val === undefined || isNaN(val)) ? "s/ dado" : Number(val).toFixed(def.casas === undefined ? 1 : def.casas) + unit;
+      const classeTxt = (cls && idxCls !== null)
+        ? `<br>Classe: <span class="pt-dot" style="background:${coresCls[idxCls]}"></span><b>${CLASSES_BOLETIM[idxCls].nome}</b>` : "";
+      layer.bindPopup(`<b>${d.municipio}</b> <span class="badge" style="background:${UF_COLOR[d.uf]}">${d.uf}</span><br>${indicatorLabel(indicatorId, dataset)}: <b>${valTxt}</b>${classeTxt}`);
     }
   });
 
   const chipsEl = document.getElementById('legendChips');
+  const infoEl = document.getElementById('legendInfo');
+  const tituloLegenda = indicatorLabel(indicatorId, dataset) + (def.tag ? ` · ${def.tag}` : "");
   if (!vals.length) {
     chipsEl.innerHTML = `<span class="legend-title">${indicatorLabel(indicatorId, dataset)} — sem dado para a data escolhida</span>`;
+    infoEl.innerHTML = "";
     return;
   }
+  if (cls) {
+    chipsEl.innerHTML = `<span class="legend-title">${tituloLegenda}</span>` + chipsDaClassificacao(cls, unit) +
+      `<span class="legend-chip"><span class="swatch" style="background:#bdbdbd"></span>sem dado</span>`;
+    const significado = "Classes do boletim CIEVS-MT: " + faixasAtivas(cls).map(f => `${CLASSES_BOLETIM[f.idx].nome} — ${CLASSES_BOLETIM[f.idx].texto}`).join(" · ") + ". ";
+    infoEl.innerHTML = `<span>${significado}${cls.fonte}</span>`;
+    return;
+  }
+  infoEl.innerHTML = def.nota ? `<span>${def.nota}</span>` : "";
   const steps = 5, seq = [];
   for (let i = 0; i < steps; i++) {
     const t0 = min + (max - min) * (i / steps), t1 = min + (max - min) * ((i + 1) / steps), mid = (t0 + t1) / 2;
     seq.push({ lo: t0, hi: t1, color: colorScale(mid, min, max, invert) });
   }
-  let html = `<span class="legend-title">${indicatorLabel(indicatorId, dataset)}</span>`;
+  let html = `<span class="legend-title">${tituloLegenda}</span>`;
   seq.forEach(s => { html += `<span class="legend-chip"><span class="swatch" style="background:${s.color}"></span>${s.lo.toFixed(0)}–${s.hi.toFixed(0)}${unit}</span>`; });
   chipsEl.innerHTML = html;
 }
@@ -540,7 +606,7 @@ function popupFoco(f) {
   const extras = [];
   if (f[FOCO.FRP] !== null && f[FOCO.FRP] !== undefined) extras.push(`FRP: ${fmtNum(f[FOCO.FRP], 1)} MW`);
   if (f[FOCO.SECA] !== null && f[FOCO.SECA] !== undefined) extras.push(`Dias sem chuva: ${fmtNum(f[FOCO.SECA], 0)}`);
-  if (f[FOCO.RISCO] !== null && f[FOCO.RISCO] !== undefined) extras.push(`Risco de fogo (INPE): ${fmtNum(f[FOCO.RISCO], 2)}`);
+  if (f[FOCO.RISCO] !== null && f[FOCO.RISCO] !== undefined) extras.push(`Risco de fogo (INPE): ${fmtNum(f[FOCO.RISCO], 2)} — ${classeRiscoFogo(f[FOCO.RISCO])}`);
   if (f[FOCO.BIOMA]) extras.push(`Bioma: ${f[FOCO.BIOMA]}`);
   if (extras.length) linhas.push(extras.join(" · "));
   const cab = mun
@@ -574,8 +640,8 @@ function renderFocos() {
   lista.forEach(f => {
     const ref = !!f[FOCO.REF];
     L.circleMarker([f[FOCO.LAT], f[FOCO.LON]], {
-      radius: ref ? 4 : 3.5, weight: 1.5, color: "#1c2a2e", opacity: 1,
-      fillColor: ref ? "#1c2a2e" : "#ffffff", fillOpacity: ref ? 0.95 : 0.9
+      radius: ref ? 4.5 : 3.5, weight: 1.5, color: "#ffffff", opacity: 1,
+      fillColor: ref ? "#b3120f" : "#f0463c", fillOpacity: 0.95
     }).bindPopup(popupFoco(f)).addTo(focosLayer);
   });
   const nRef = doDia.filter(f => f[FOCO.REF]).length;
